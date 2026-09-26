@@ -35,33 +35,76 @@ class BruteForce:
 
 
 class YourFinder:
-    """Your near-duplicate finder.
-
-        __init__(threshold)
-        find(docs, similarity) -> {(i, j), ...}
-
-    `similarity(a, b)` is the only way to compare two documents, and every call
-    is counted. Everything else - signatures, banding, bucketing - is free, in
-    the sense that the harness does not charge you for it. That is deliberate:
-    it is also roughly true at scale, where the comparison is the expensive
-    part and the hashing is linear.
-
-    Two knobs decide everything:
-
-        the number of hashes in a signature
-        how many bands you split it into
-
-    §3.4.2 gives you the relationship between those and the probability that a
-    pair at similarity s becomes a candidate. It is an S-curve, and where its
-    step sits is something you choose. Choose it on purpose and be able to say
-    why in observation.md - a threshold of 0.8 does not mean bands should be
-    anything in particular until you have done the arithmetic.
-
-    You may reuse your Task 1 code.
-    """
+    """Near-duplicate finder using MinHash + LSH."""
 
     def __init__(self, threshold):
-        raise NotImplementedError("write your finder")
+        self.threshold = threshold
+
+        # 120 hashes, split into 30 bands of 4 rows each.
+        self.num_hashes = 120
+        self.bands = 30
 
     def find(self, docs, similarity):
-        raise NotImplementedError
+        import random
+
+        if not docs:
+            return set()
+
+        # Prime larger than the shingle vocabulary.
+        prime = 10007
+
+        # Reproducible, independently generated hash parameters.
+        rng = random.Random(12345)
+        hashes = []
+
+        for _ in range(self.num_hashes):
+            a = rng.randrange(1, prime)
+            b = rng.randrange(0, prime)
+            hashes.append((a, b))
+
+        # Build MinHash signatures.
+        signatures = []
+
+        for doc in docs:
+            sig = []
+
+            for a, b in hashes:
+                minimum = prime
+
+                for shingle in doc:
+                    value = (a * shingle + b) % prime
+                    if value < minimum:
+                        minimum = value
+
+                sig.append(minimum)
+
+            signatures.append(sig)
+
+        # LSH
+        rows_per_band = self.num_hashes // self.bands
+        candidates = set()
+
+        for band in range(self.bands):
+            buckets = {}
+
+            start = band * rows_per_band
+            end = start + rows_per_band
+
+            for i, sig in enumerate(signatures):
+                key = tuple(sig[start:end])
+                buckets.setdefault(key, []).append(i)
+
+            for bucket in buckets.values():
+                if len(bucket) > 1:
+                    for x in range(len(bucket)):
+                        for y in range(x + 1, len(bucket)):
+                            candidates.add((bucket[x], bucket[y]))
+
+        # Exact similarity only for LSH candidates.
+        out = set()
+
+        for i, j in candidates:
+            if similarity(docs[i], docs[j]) >= self.threshold:
+                out.add((i, j))
+
+        return out
