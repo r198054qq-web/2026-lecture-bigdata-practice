@@ -24,33 +24,89 @@ DEAD_END = {"A": ["B", "C"], "B": ["C"], "C": []}
 SPIDER_TRAP = {"A": ["B"], "B": ["C"], "C": ["D"], "D": ["C"]}
 
 
+
 def pagerank(graph, beta=0.85, iterations=100, tol=1e-10):
-    """Rank every node. Return {node: rank}, summing to 1.
+    nodes = list(graph.keys())
+    n = len(nodes)
 
-    `beta` is the probability the surfer follows a link. With probability
-    1 - beta they teleport to a node chosen uniformly.
+    if n == 0:
+        pagerank.iterations = 0
+        return {}
 
-    You have to handle both of these, and the textbook handles them the same way:
+    rank = {node: 1.0 / n for node in nodes}
 
-      dead ends    a node with no out-links. Where does its rank go, and where
-                   should it go instead?
-      spider traps a group of nodes that only link to each other. Without
-                   teleporting, they end up with all of it
+    for step in range(iterations):
+        new_rank = {
+            node: (1.0 - beta) / n
+            for node in nodes
+        }
 
-    Stop early when the ranks stop moving - `tol` is the L1 change below which
-    you should call it converged. Return the ranks, and set `pagerank.iterations`
-    to how many you actually used, because Task 2 measures that.
-    """
-    raise NotImplementedError("implement PageRank")
+        # Redistribute rank from dead ends uniformly.
+        dead_rank = sum(
+            rank[node]
+            for node in nodes
+            if len(graph[node]) == 0
+        )
+
+        for node in nodes:
+            new_rank[node] += beta * dead_rank / n
+
+        # Distribute rank along outgoing links.
+        for node in nodes:
+            links = graph[node]
+
+            if not links:
+                continue
+
+            share = beta * rank[node] / len(links)
+
+            for target in links:
+                new_rank[target] += share
+
+        # L1 difference between iterations.
+        diff = sum(
+            abs(new_rank[node] - rank[node])
+            for node in nodes
+        )
+
+        rank = new_rank
+
+        if diff < tol:
+            pagerank.iterations = step + 1
+            return rank
+
+    pagerank.iterations = iterations
+    return rank
 
 
 def pagerank_no_teleport(graph, iterations=100):
-    """The broken version: beta = 1, no teleporting. Build this too.
+    nodes = list(graph.keys())
+    n = len(nodes)
 
-    It exists so you can watch both failures happen rather than take them on
-    trust. The harness checks that it really does fail.
-    """
-    raise NotImplementedError("implement the broken version")
+    if n == 0:
+        return {}
+
+    rank = {node: 1.0 / n for node in nodes}
+
+    for _ in range(iterations):
+        new_rank = {node: 0.0 for node in nodes}
+
+        for node in nodes:
+            links = graph[node]
+
+            # Dead ends lose their rank.
+            if not links:
+                continue
+
+            share = rank[node] / len(links)
+
+            for target in links:
+                new_rank[target] += share
+
+        rank = new_rank
+
+    return rank
+
 
 
 # ------------------------------------------------------------------- harness
