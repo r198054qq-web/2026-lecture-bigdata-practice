@@ -57,31 +57,76 @@ def _means(points, labels, k, previous):
 
 
 class YourKMeans:
-    """Your k-means.
-
-        __init__(k, max_iter=50)
-        run(points, initial_centroids, distance) -> (labels, centroids)
-
-    Same starting centroids, same `distance` function - which is counted. That
-    counter is your score.
-
-    The idea, from §7.3 and the triangle inequality:
-
-        if a point is much closer to its current centroid than that centroid
-        moved, and than any other centroid could have come, then it cannot have
-        changed cluster, and you do not have to measure anything
-
-    Keeping enough bookkeeping to make that test cheap, without keeping so much
-    that the bookkeeping costs more than the distances, is the task.
-
-    You may call `distance` on two centroids, and those calls are counted too -
-    which is the correct accounting, since that is real work. There are k of
-    them and n points, and k is much smaller than n. That asymmetry is the
-    whole opening.
-    """
+    """K-means accelerated using centroid-distance bounds."""
 
     def __init__(self, k, max_iter=50):
-        raise NotImplementedError("write your k-means")
+        self.k = k
+        self.max_iter = max_iter
+        self.iterations = 0
 
     def run(self, points, initial_centroids, distance):
-        raise NotImplementedError
+        n = len(points)
+        k = self.k
+        centroids = list(initial_centroids)
+        labels = [None] * n
+
+        # Upper bounds on distances to assigned centroids.
+        upper = [float("inf")] * n
+
+        for iteration in range(1, self.max_iter + 1):
+            self.iterations = iteration
+            changed = False
+
+            # Half the minimum distance to another centroid.
+            separation = [float("inf")] * k
+
+            if k > 1:
+                for a in range(k):
+                    for b in range(a + 1, k):
+                        d = distance(centroids[a], centroids[b]) / 2
+                        separation[a] = min(separation[a], d)
+                        separation[b] = min(separation[b], d)
+
+            for i, p in enumerate(points):
+                old_label = labels[i]
+
+                # Skip if the point is provably closest
+                # to its previously assigned centroid.
+                if old_label is not None:
+                    if upper[i] < separation[old_label]:
+                        continue
+
+                best = None
+                best_index = 0
+
+                for j, c in enumerate(centroids):
+                    d = distance(p, c)
+
+                    if best is None or d < best - 1e-12:
+                        best = d
+                        best_index = j
+
+                if labels[i] != best_index:
+                    labels[i] = best_index
+                    changed = True
+
+                upper[i] = best
+
+            old_centroids = centroids
+            centroids = _means(
+                points, labels, k, old_centroids
+            )
+
+            if not changed:
+                break
+
+            # Account for centroid movement.
+            movement = [
+                distance(old_centroids[j], centroids[j])
+                for j in range(k)
+            ]
+
+            for i in range(n):
+                upper[i] += movement[labels[i]]
+
+        return labels, centroids
