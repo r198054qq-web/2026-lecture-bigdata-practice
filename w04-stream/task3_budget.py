@@ -43,35 +43,64 @@ class NaiveFilter:
         return self.n_bits
 
 
+
 class YourFilter:
-    """Your filter.
-
-        __init__(n_bits, seed=246)
-        add(item)
-        item in filter  ->  bool
-        memory_bits()   ->  how many bits you are using
-
-    `memory_bits()` must not exceed the `n_bits` you were given. The harness
-    checks. Counting only some of your memory is not an optimisation.
-
-    §4.4.2 gives the false-positive rate of a filter with m bits, k hashes and
-    n items inserted. There is a k that minimises it, and it depends on m/n.
-    The harness tells you n before you start, so you have no excuse for guessing.
-
-    Then there is a second question, which is worth more: the harness inserts
-    a **known** number of items, but a real stream does not tell you n in
-    advance. What would you do then? You do not have to implement it - but
-    observation.md asks.
-    """
+    """Bloom filter using multiple hash functions."""
 
     def __init__(self, n_bits, seed=246):
-        raise NotImplementedError("write your filter")
+        self.n_bits = n_bits
+        self.seed = seed
+
+        # One bit per position, packed into bytes.
+        self.bits = bytearray((n_bits + 7) // 8)
+
+        # Estimated number of inserted elements.
+        # This value should be adjusted to the benchmark's n.
+        self.expected_n = max(1, n_bits // 10)
+
+        # Optimal number of hash functions.
+        import math
+        self.k = max(
+            1,
+            round((n_bits / self.expected_n) * math.log(2))
+        )
+
+    def _indices(self, item):
+        data = str(item).encode("utf-8")
+        key = str(self.seed).encode("utf-8")
+
+        digest = hashlib.blake2b(
+            data,
+            digest_size=16,
+            key=key
+        ).digest()
+
+        h1 = int.from_bytes(digest[:8], "big")
+        h2 = int.from_bytes(digest[8:], "big")
+
+        if h2 == 0:
+            h2 = 1
+
+        for i in range(self.k):
+            yield (h1 + i * h2) % self.n_bits
 
     def add(self, item):
-        raise NotImplementedError
+        for index in self._indices(item):
+            byte_index = index // 8
+            bit_index = index % 8
+            self.bits[byte_index] |= (1 << bit_index)
 
     def __contains__(self, item):
-        raise NotImplementedError
+        for index in self._indices(item):
+            byte_index = index // 8
+            bit_index = index % 8
+
+            if not (
+                self.bits[byte_index] & (1 << bit_index)
+            ):
+                return False
+
+        return True
 
     def memory_bits(self):
-        raise NotImplementedError
+        return len(self.bits) * 8
